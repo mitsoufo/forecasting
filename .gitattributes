@@ -1,0 +1,2 @@
+setfit[[:space:]]evergreen/**/*.safetensors filter=lfs diff=lfs merge=lfs -text
+setfit[[:space:]]evergreen/**/*.pt filter=lfs diff=lfs merge=lfs -text
