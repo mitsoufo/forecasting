@@ -4,6 +4,8 @@ __pycache__/
 .ipynb_checkpoints/
 .venv/
 venv/
-data/
+data/*
+!data/.gitkeep
 checkpoints/
-reports/
+reports/*
+!reports/.gitkeep
