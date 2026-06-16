@@ -8,6 +8,12 @@ Run the full pipeline from the project root:
 python3 run_pipeline.py
 ```
 
+Before running a new event forecast:
+
+- Put the required event settings in `input.py`.
+- Use `pipeline/config.py` only for optional tuning, such as stopwords,
+  evergreen guardrails, baseline multipliers, and manual topic labels.
+
 Reports are written to `reports/`.
 
 Project layout:
