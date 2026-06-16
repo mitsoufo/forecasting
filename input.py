@@ -5,7 +5,6 @@ import pandas as pd
 
 # Event identity
 EVENT_NAME = "Toronto International Film Festival"
-EVENT_KEY = "toronto_international_film_festival"
 ARTICLE_LANGUAGE = "en"  # ISO 639-1 language code, e.g. "en" or "fr"
 
 # Event dates

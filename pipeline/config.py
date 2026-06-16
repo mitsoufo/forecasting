@@ -4,6 +4,8 @@
 
 import importlib.util
 import os
+import re
+import unicodedata
 from pathlib import Path
 
 
@@ -22,8 +24,15 @@ def _required_input(name: str):
         raise AttributeError(f"Missing required input.py value: {name}") from exc
 
 
+def _slugify(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value)
+    ascii_value = normalized.encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-z0-9]+", "_", ascii_value.lower()).strip("_")
+    return re.sub(r"_+", "_", slug)
+
+
 EVENT_NAME = _required_input("EVENT_NAME")
-EVENT_KEY = _required_input("EVENT_KEY")
+EVENT_KEY = _slugify(EVENT_NAME)
 ARTICLE_LANGUAGE = _required_input("ARTICLE_LANGUAGE")
 EVENT_ANCHORS = _required_input("EVENT_ANCHORS")
 EVENT_ENDS = _required_input("EVENT_ENDS")
