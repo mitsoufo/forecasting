@@ -46,6 +46,7 @@ TODAY       = datetime.date.today().strftime("%d %B %Y")
 MIN_TOPIC_IMPRESSION_SHARE = 0.001
 # Maximum number of topics to surface in the activation plan and topic browser.
 MAX_TOPICS = 5
+USE_FASHION_WEEK_OVERRIDES = EVENT_KEY == "paris_fashion_week"
 
 TOPIC_PRESENTATION_OVERRIDES = {
     "Evergreen_3": {
@@ -157,13 +158,16 @@ TOPIC_EXAMPLE_OVERRIDES = {
 
 def topic_example_config(topic_key):
     cfg = {}
-    cfg.update(TOPIC_PRESENTATION_OVERRIDES.get(str(topic_key), {}))
-    cfg.update(TOPIC_EXAMPLE_OVERRIDES.get(str(topic_key), {}))
+    if USE_FASHION_WEEK_OVERRIDES:
+        cfg.update(TOPIC_PRESENTATION_OVERRIDES.get(str(topic_key), {}))
+        cfg.update(TOPIC_EXAMPLE_OVERRIDES.get(str(topic_key), {}))
     return cfg
 
 
 def apply_topic_presentation_overrides(frame):
     if frame is None or frame.empty or "topic_label" not in frame.columns:
+        return frame
+    if not USE_FASHION_WEEK_OVERRIDES:
         return frame
     frame = frame.copy()
     old_to_new = {
@@ -1494,7 +1498,7 @@ strategy_reco_df = pd.DataFrame(strategy_reco_rows)
 strategy_reco_html = df_to_html(strategy_reco_df, no_toggle=True)
 strategy_summary_html = f"""
 <div class="strategy-cards">
-  <div class="strategy-card"><div class="strategy-label">Event period</div><div class="strategy-value">{event_period_window}</div><div class="strategy-note">Paris Fashion Week Spring 2027</div></div>
+  <div class="strategy-card"><div class="strategy-label">Event period</div><div class="strategy-value">{event_period_window}</div><div class="strategy-note">{EVENT_NAME} {FORECAST_YEAR}</div></div>
   <div class="strategy-card"><div class="strategy-label">Peak attention</div><div class="strategy-value">{peak_label}</div><div class="strategy-note">{peak_imps:,} imps · organic editorial reach</div></div>
   <div class="strategy-card"><div class="strategy-label">High-pressure window</div><div class="strategy-value">{event_push_window}</div><div class="strategy-note">Concentrate delivery around the forecast peak</div></div>
   <div class="strategy-card"><div class="strategy-label">Reach mix</div><div class="strategy-value">{100 - spont_avg_pct:.1f}% / {spont_avg_pct:.1f}%</div><div class="strategy-note">Evergreen / spontaneous impressions</div></div>
@@ -1886,8 +1890,8 @@ takeaway_volume = (
     f"so keep budget flexible around this date."
 )
 takeaway_category = (
-    "Fashion and celebrity categories carry the bulk of impressions, but the reach "
-    "spreads across lifestyle, entertainment, and beauty \u2014 giving non-fashion brands "
+    "Entertainment and celebrity categories carry the bulk of impressions, but the reach "
+    "spreads across film, music, lifestyle, and culture \u2014 giving brands "
     "a credible entry point into the cultural moment."
 )
 takeaway_topic = (
@@ -1924,6 +1928,12 @@ topic_timing_html = "\n".join(topic_timing_html_parts)
 
 _second_topic      = proj.iloc[1] if len(proj) > 1 else None
 _second_topic_name = str(_second_topic["topic_label"]) if _second_topic is not None else ""
+_peak_offset_days = (peak_date - BF_2026).days
+_peak_timing_phrase = (
+    f"{abs(_peak_offset_days)} days after {EVENT_NAME} begins"
+    if _peak_offset_days >= 0
+    else f"{abs(_peak_offset_days)} days before {EVENT_NAME} begins"
+)
 
 tldr_html = (
     '<div class="tldr">'
@@ -1938,10 +1948,10 @@ tldr_html = (
     f'<div class="tldr-item"><div class="tldr-num">2</div><div class="tldr-text">'
     f'<b>{_top_topic_name}</b> is the largest evergreen topic, with <b>{_top_topic_imps:,}\u202fimps</b> '
     f'(<b>{_top_share_ev_pct}% of evergreen reach</b>, {_top_share_pct}% of total forecast reach). '
-    f'Use it as an anchor layer, while {_second_topic_name} and the remaining topics add audience breadth across style, shopping, and public-figure coverage.'
+    f'Use it as an anchor layer, while {_second_topic_name} and the remaining topics add audience breadth across film, music, and celebrity coverage.'
     '</div></div>'
     f'<div class="tldr-item"><div class="tldr-num">3</div><div class="tldr-text">'
-    f'Content volume peaks <b>{_peak_days_before} days before Fashion Week begins</b>, on <b>{peak_label}</b> '
+    f'Content volume peaks <b>{_peak_timing_phrase}</b>, on <b>{peak_label}</b> '
     f'({peak_imps:,}\u202fimps in a single day), driven mainly by the {peak_driver_type.lower() if peak_driver_type else "highest-reach"} layer. '
     f'This is historical editorial demand \u2014 audience attention on relevant articles, not campaign delivery. '
     f'The event period runs <b>{event_period_window}</b>; topic activation windows can start before it and extend after it. '
@@ -1949,7 +1959,7 @@ tldr_html = (
     '</div></div>'
     '<div class="tldr-item"><div class="tldr-num">4</div><div class="tldr-text">'
     '<b>Do not launch all topics at once.</b> '
-    'Each topic has a different natural content rhythm \u2014 some peak during the Fashion Week period, others build later into October. '
+    f'Each topic has a different natural content rhythm \u2014 some peak during the {EVENT_NAME} period, others build around adjacent coverage moments. '
     'The activation schedule in this report assigns each topic its optimal start date. '
     'Staggering the launch maximises reach across the full window without increasing budget.'
     '</div></div>'
@@ -2214,7 +2224,7 @@ html = f"""<!DOCTYPE html>
   <div class="content-def">
     <span class="content-def-dot" style="background:#5476FF"></span>
     <span class="content-def-term">Evergreen</span>
-    <span class="content-def-desc">Plannable contextual inventory assigned to stable Paris Fashion Week topic clusters. For this forecast, that includes recurring fashion themes plus high-reach event-adjacent stories that can be packaged against predictable audience interest.</span>
+    <span class="content-def-desc">Plannable contextual inventory assigned to stable {EVENT_NAME} topic clusters. For this forecast, that includes recurring entertainment themes plus high-reach event-adjacent stories that can be packaged against predictable audience interest.</span>
   </div>
   <div class="content-def">
     <span class="content-def-dot" style="background:#FF6B7C"></span>

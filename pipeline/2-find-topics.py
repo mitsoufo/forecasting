@@ -28,7 +28,14 @@ NR_TOPICS_MAX    = 18
 GEMINI_API_KEY   = os.getenv("GEMINI_API_KEY", "")  # set env var or paste key here
 GEMINI_MODEL     = "gemini-2.5-flash-lite"  # 500 RPD on free tier vs 20 for 2.5-flash
 
-from config import EVENT_NAME, EVENT_KEY, EVENT_ANCHORS, FORECAST_YEAR, DOMAIN_STOPWORDS
+from config import (
+    EVENT_NAME,
+    EVENT_KEY,
+    EVENT_ANCHORS,
+    FORECAST_YEAR,
+    DOMAIN_STOPWORDS,
+    MANUAL_TOPIC_LABELS,
+)
 
 print("Imports OK")
 
@@ -235,6 +242,17 @@ else:
     llm_out = llm_label_topics(raw_topic_payload)
     label_map = {k: v["label"] for k, v in llm_out.items()}
     desc_map  = {k: v.get("description", "") for k, v in llm_out.items()}
+
+manual_current = {
+    key: value
+    for key, value in MANUAL_TOPIC_LABELS.items()
+    if key in current_keys
+}
+if manual_current:
+    print(f"[Manual labels] Applying {len(manual_current)} configured topic labels")
+    for key, value in manual_current.items():
+        label_map[key] = value["label"]
+        desc_map[key] = value.get("description", "")
 
 # ── 2. Save topic_descriptions.csv FIRST (canonical source of truth) ─────────
 desc_df = pd.DataFrame([

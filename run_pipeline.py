@@ -19,7 +19,6 @@ PIPELINE_STEPS = [
     PIPELINE_DIR / "5-yoy-trends.py",
     PIPELINE_DIR / "6-report.py",
     PIPELINE_DIR / "7-metrics.py",
-    PIPELINE_DIR / "9-contextual-analysis-v3.py",
 ]
 
 
