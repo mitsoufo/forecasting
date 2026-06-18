@@ -9,7 +9,10 @@ from config import (
     COMPARE_YEAR,
     FORECAST_WINDOW_START,
     FORECAST_WINDOW_END,
+    EVERGREEN_PLANNING_TARGET,
+    EVERGREEN_OBSERVED_WEIGHT,
     MIN_EVERGREEN_IMPRESSION_SHARE,
+    MAX_EVERGREEN_IMPRESSION_SHARE,
 )
 
 TOPIC_DATA_PATH = Path("data/with_topics.csv")
@@ -84,21 +87,30 @@ impression_share = (
     .sum()
     .unstack(fill_value=0)
 )
-target_shares = impression_share.div(impression_share.sum(axis=1), axis=0).mean()
-target_shares = target_shares / target_shares.sum()
+observed_shares = impression_share.div(impression_share.sum(axis=1), axis=0).mean()
+observed_shares = observed_shares / observed_shares.sum()
+target_shares = observed_shares.copy()
 
-if (
-    "Evergreen" in target_shares.index
-    and target_shares["Evergreen"] < MIN_EVERGREEN_IMPRESSION_SHARE
-):
+if "Evergreen" in target_shares.index:
+    observed_evergreen = float(target_shares["Evergreen"])
+    calibrated_evergreen = (
+        EVERGREEN_PLANNING_TARGET
+        + EVERGREEN_OBSERVED_WEIGHT
+        * (observed_evergreen - EVERGREEN_PLANNING_TARGET)
+    )
+    calibrated_evergreen = float(np.clip(
+        calibrated_evergreen,
+        MIN_EVERGREEN_IMPRESSION_SHARE,
+        MAX_EVERGREEN_IMPRESSION_SHARE,
+    ))
     non_evergreen = target_shares.index != "Evergreen"
-    remaining_share = 1 - MIN_EVERGREEN_IMPRESSION_SHARE
+    remaining_share = 1 - calibrated_evergreen
     non_evergreen_total = target_shares.loc[non_evergreen].sum()
     if non_evergreen_total > 0:
         target_shares.loc[non_evergreen] = (
             target_shares.loc[non_evergreen] / non_evergreen_total * remaining_share
         )
-    target_shares["Evergreen"] = MIN_EVERGREEN_IMPRESSION_SHARE
+    target_shares["Evergreen"] = calibrated_evergreen
 
 target_shares = target_shares / target_shares.sum()
 
@@ -123,7 +135,9 @@ for content_type, target_total in target_totals.items():
         floor + (rank <= remainder).astype(int)
     ).astype(int)
 
-print("Target impression share from classified article mix:")
+print("Observed impression share:")
+print((observed_shares * 100).round(1).to_string())
+print("Calibrated planning impression share:")
 print((target_shares * 100).round(1).to_string())
 
 forecast_2026_by_type = forecast_2026_by_type[

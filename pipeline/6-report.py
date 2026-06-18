@@ -340,6 +340,7 @@ spont_base["impressions_M"]   = (spont_base["impressions"] / 1e6).round(3)
 spont_only    = spont_base[spont_base[LABEL_COL] == "Spontaneous"].set_index("year")
 spont_avg_pct = spont_only["pct_impressions"].mean().round(1)
 spont_article_pct = spont_only["pct_articles"].mean().round(1)
+observed_spont_avg_pct = float(spont_avg_pct)
 spont_avg_M   = spont_only["impressions_M"].mean()
 
 print("=== SPONTANEOUS BASELINE BY YEAR ===")
@@ -857,11 +858,11 @@ if (
 # Allocate the Evergreen forecast total across categories by average historical
 # impression share, so categories reconcile to the Evergreen KPI.
 CAT_COL = "page_categories_tier1"
+category_takeaway_text = "Category information is not available for this forecast."
+unclassified_pct = 0
 if CAT_COL in df_src.columns:
-    cat_src = df_src[
-        (df_src[LABEL_COL] == "Evergreen")
-        & df_src[CAT_COL].notna()
-    ].copy()
+    cat_src = df_src[df_src[LABEL_COL] == "Evergreen"].copy()
+    cat_src[CAT_COL] = cat_src[CAT_COL].fillna("Unclassified")
     cat_yearly = (
         cat_src
         .groupby(["year", CAT_COL])["ClientCreativeImpression"]
@@ -886,6 +887,21 @@ if CAT_COL in df_src.columns:
         f"forecast_impressions_{FORECAST_YEAR}", ascending=False
     )
     cat_extra_html = ""
+    cat_total = int(cat_forecast.sum())
+    unclassified_imps = int(cat_forecast.get("Unclassified", 0))
+    unclassified_pct = round(unclassified_imps / cat_total * 100) if cat_total else 0
+    labeled_categories = cat_forecast.drop(labels=["Unclassified"], errors="ignore").sort_values(
+        ascending=False
+    )
+    labeled_leaders = ", ".join(
+        f"{str(category).replace('-', ' ')} ({value / cat_total * 100:.0f}%)"
+        for category, value in labeled_categories.head(3).items()
+    )
+    category_takeaway_text = (
+        f"Category metadata is limited: <b>{unclassified_pct}%</b> of evergreen forecast "
+        f"impressions are unclassified. Among labeled inventory, the leading categories are "
+        f"{labeled_leaders}."
+    )
 
     fig_cat = go.Figure()
     fig_cat.add_trace(go.Bar(
@@ -1630,20 +1646,24 @@ for _ct in ["Evergreen"]:
         + df_to_html(_table, no_toggle=True)
     )
 yoy_html = "\n".join(yoy_sections) if yoy_sections else "<p>No YoY topic data available.</p>"
-_spont_rows = spont_base[["year", LABEL_COL, "articles", "impressions_M", "pct_impressions"]].copy()
-# 2026 projected rows are intentionally excluded from the display table: the model
-# produces a flat projection (same mix as 2025), so adding a duplicate row adds no
-# information. Absolute 2026 volume targets are shown in the KPI cards above.
+_spont_rows = spont_base[
+    ["year", LABEL_COL, "articles", "impressions", "pct_impressions"]
+].copy()
+# The table preserves the observed historical mix. The KPI cards and takeaways
+# show the calibrated planning allocation used for the forecast.
 spont_disp = _spont_rows.copy()
-spont_disp["impressions"] = (spont_disp["impressions_M"] * 1e6).round(0).astype(int).map("{:,}".format)
+spont_disp["impressions"] = spont_disp["impressions"].round(0).astype(int).map("{:,}".format)
 spont_disp["articles"]    = spont_disp["articles"].map("{:,}".format)
-spont_disp = spont_disp.drop(columns=["impressions_M"]).rename(columns={
+spont_disp = spont_disp.rename(columns={
     "year":            "Year",
     LABEL_COL:         "Content Type",
     "articles":        "Articles",
     "impressions":     "Impressions",
     "pct_impressions": "% Impressions",
 })
+spont_disp = spont_disp[
+    ["Year", "Content Type", "Articles", "% Impressions", "Impressions"]
+]
 spont_html = df_to_html(spont_disp)
 
 # ── Main topic cards (clickable, with descriptions) ──────────
@@ -1881,18 +1901,22 @@ _all_total_imps     = int(total_proj_M * 1e6)
 _top_share_pct      = round(_top_topic_imps / _all_total_imps * 100) if _all_total_imps > 0 else 0
 _top_share_ev_pct   = round(_top_topic_imps / _ev_total_imps * 100) if _ev_total_imps > 0 else 0
 _peak_days_before   = (BF_2026 - peak_date).days
+if peak_date < BF_2026:
+    _peak_context = f"Attention builds before the {EVENT_NAME} period and peaks on"
+elif peak_date > FW_END_2026:
+    _peak_context = f"Post-event attention peaks after the {EVENT_NAME} period on"
+else:
+    _peak_context = f"Attention peaks during the {EVENT_NAME} period on"
 
 takeaway_volume = (
-    f"Attention builds before the {EVENT_NAME} period and peaks on <b>{peak_label}</b> "
+    f"{_peak_context} <b>{peak_label}</b> "
     f"({peak_imps:,} forecast impressions). "
     f"The shaded band marks the event period: <b>{event_range_label()}</b>. "
     f"The peak is led by the {peak_driver_type.lower() if peak_driver_type else 'highest-reach'} layer, "
     f"so keep budget flexible around this date."
 )
 takeaway_category = (
-    "Entertainment and celebrity categories carry the bulk of impressions, but the reach "
-    "spreads across film, music, lifestyle, and culture \u2014 giving brands "
-    "a credible entry point into the cultural moment."
+    category_takeaway_text
 )
 takeaway_topic = (
     f"<b>{_top_topic_name}</b> is the largest evergreen topic, with {_top_topic_imps:,}\u202fimps "
@@ -1904,11 +1928,44 @@ takeaway_timing = (
     "natural content curve \u2014 activating too early wastes budget, too late misses the attention window."
 )
 takeaway_mix = (
-    f"The split shown here is based on <b>impressions</b>: Evergreen represents "
+    f"The planning split shown here is based on <b>forecast impressions</b>: Evergreen represents "
     f"<b>{100 - spont_avg_pct:.0f}%</b> of forecast reach and Spontaneous represents "
-    f"<b>{spont_avg_pct:.0f}%</b>. Article counts are less useful for budget planning because "
-    "a small number of high-reach articles can carry most of the audience."
+    f"<b>{spont_avg_pct:.0f}%</b>. It is softly calibrated toward an 80% evergreen target, "
+    f"within a 70% to 90% range; the observed historical split was "
+    f"<b>{100 - observed_spont_avg_pct:.0f}% / {observed_spont_avg_pct:.0f}%</b>."
 )
+
+if EVENT_KEY == "toronto_international_film_festival":
+    _days_after_event = max((peak_date - FW_END_2026).days, 0)
+    takeaway_volume = (
+        f"Forecast attention peaks <b>{_days_after_event} days after TIFF ends</b>, on "
+        f"<b>{peak_label}</b> ({peak_imps:,} forecast impressions). This supports an "
+        "always-on extension after the live festival window for reviews, streaming discovery, "
+        "talent coverage, and broader entertainment follow-up."
+    )
+    takeaway_category = (
+        f"Category metadata is limited: <b>{unclassified_pct}%</b> of evergreen forecast "
+        "impressions are unclassified. Use categories as a broad reach diagnostic; for TIFF "
+        "relevance, prioritize the screen, music, celebrity, and red-carpet topic layers."
+    )
+    takeaway_topic = (
+        f"<b>{_top_topic_name}</b> is the largest scale layer, with {_top_topic_imps:,}\u202fimps "
+        f"({_top_share_ev_pct}% of evergreen reach). It should widen reach around TIFF, while "
+        "<b>Streaming, Film & TV Discovery</b>, <b>Music & Artist Culture</b>, "
+        "and <b>Celebrity & Entertainment Profiles</b> provide the stronger cultural connection "
+        "to the festival."
+    )
+    takeaway_timing = (
+        "TIFF-aligned topics do not peak together. Build screen and talent coverage through the "
+        "festival, keep music and red-carpet contexts active around premiere moments, and use the "
+        "post-event window for reviews, streaming discovery, and entertainment follow-up."
+    )
+    takeaway_mix = (
+        f"The observed 2025 impression mix is <b>{100 - observed_spont_avg_pct:.1f}% evergreen / "
+        f"{observed_spont_avg_pct:.1f}% spontaneous</b>. For 2026 planning, this is softly calibrated "
+        f"toward the 80% evergreen business target, producing <b>{100 - spont_avg_pct:.1f}% evergreen / "
+        f"{spont_avg_pct:.1f}% spontaneous</b>. The table below remains the unadjusted 2025 baseline."
+    )
 
 topic_timing_html_parts = []
 for ct_label in ["Evergreen"]:
@@ -1935,6 +1992,50 @@ _peak_timing_phrase = (
     else f"{abs(_peak_offset_days)} days before {EVENT_NAME} begins"
 )
 
+if EVENT_KEY == "toronto_international_film_festival":
+    _topic_takeaway_detail = (
+        f'<b>{_top_topic_name}</b> supplies the largest reach layer, with '
+        f'<b>{_top_topic_imps:,}\u202fimps</b> (<b>{_top_share_ev_pct}% of evergreen reach</b>). '
+        'Use it for scale, then strengthen TIFF relevance with Streaming, Film & TV Discovery, '
+        'Music & Artist Culture, Celebrity & Entertainment Profiles, and red-carpet contexts.'
+    )
+    _peak_takeaway_detail = (
+        f'Forecast attention peaks <b>{max((peak_date - FW_END_2026).days, 0)} days after TIFF ends</b>, '
+        f'on <b>{peak_label}</b> ({peak_imps:,}\u202fimps in a single day), driven mainly by the '
+        f'{peak_driver_type.lower() if peak_driver_type else "highest-reach"} layer. '
+        'Plan beyond the closing weekend to capture reviews, streaming discovery, talent coverage, '
+        'and continued entertainment interest.'
+    )
+    _stagger_takeaway_detail = (
+        '<b>Do not launch all topics at once.</b> Start broad evergreen reach before TIFF, '
+        'intensify screen, celebrity, music, and red-carpet contexts during the festival, and '
+        'preserve spontaneous budget for premieres and breaking talent moments. Extend selected '
+        'topics after the event while reviews and streaming interest remain active.'
+    )
+else:
+    _topic_takeaway_detail = (
+        f'<b>{_top_topic_name}</b> is the largest evergreen topic, with <b>{_top_topic_imps:,}\u202fimps</b> '
+        f'(<b>{_top_share_ev_pct}% of evergreen reach</b>, {_top_share_pct}% of total forecast reach). '
+        f'Use it as an anchor layer, while {_second_topic_name} and the remaining topics add breadth '
+        'across television, sports, music, lifestyle, technology, and culture.'
+    )
+    _peak_takeaway_detail = (
+        f'Forecast attention peaks <b>{_peak_timing_phrase}</b>, on <b>{peak_label}</b> '
+        f'({peak_imps:,}\u202fimps in a single day), driven mainly by the '
+        f'{peak_driver_type.lower() if peak_driver_type else "highest-reach"} layer. '
+        'This is a planning forecast derived from historical editorial timing and calibrated reach '
+        f'allocation, not campaign delivery. The event period runs <b>{event_period_window}</b>; '
+        'topic activation windows can start before it and extend after it. Use the activation chart '
+        'and table to stagger launches across that full attention window.'
+    )
+    _stagger_takeaway_detail = (
+        '<b>Do not launch all topics at once.</b> '
+        f'Each topic has a different natural content rhythm \u2014 some peak during the {EVENT_NAME} '
+        'period, others build around adjacent coverage moments. The activation schedule suggests '
+        'timing windows based on the observed publishing curve. Staggering the launch can spread '
+        'delivery across the full modeled attention window.'
+    )
+
 tldr_html = (
     '<div class="tldr">'
     '<div class="tldr-label">The short version</div>'
@@ -1946,22 +2047,13 @@ tldr_html = (
     f'Use this as the budget split; article counts are shown as volume context, not the planning mix.'
     '</div></div>'
     f'<div class="tldr-item"><div class="tldr-num">2</div><div class="tldr-text">'
-    f'<b>{_top_topic_name}</b> is the largest evergreen topic, with <b>{_top_topic_imps:,}\u202fimps</b> '
-    f'(<b>{_top_share_ev_pct}% of evergreen reach</b>, {_top_share_pct}% of total forecast reach). '
-    f'Use it as an anchor layer, while {_second_topic_name} and the remaining topics add audience breadth across film, music, and celebrity coverage.'
+    f'{_topic_takeaway_detail}'
     '</div></div>'
     f'<div class="tldr-item"><div class="tldr-num">3</div><div class="tldr-text">'
-    f'Content volume peaks <b>{_peak_timing_phrase}</b>, on <b>{peak_label}</b> '
-    f'({peak_imps:,}\u202fimps in a single day), driven mainly by the {peak_driver_type.lower() if peak_driver_type else "highest-reach"} layer. '
-    f'This is historical editorial demand \u2014 audience attention on relevant articles, not campaign delivery. '
-    f'The event period runs <b>{event_period_window}</b>; topic activation windows can start before it and extend after it. '
-    f'Use the activation chart and table to stagger launches across that full attention window.'
+    f'{_peak_takeaway_detail}'
     '</div></div>'
     '<div class="tldr-item"><div class="tldr-num">4</div><div class="tldr-text">'
-    '<b>Do not launch all topics at once.</b> '
-    f'Each topic has a different natural content rhythm \u2014 some peak during the {EVENT_NAME} period, others build around adjacent coverage moments. '
-    'The activation schedule in this report assigns each topic its optimal start date. '
-    'Staggering the launch maximises reach across the full window without increasing budget.'
+    f'{_stagger_takeaway_detail}'
     '</div></div>'
     '</div>'
     '</div>'
@@ -2180,11 +2272,11 @@ HTML_JS = HTML_JS.replace("FORECAST_YEAR_PLACEHOLDER", str(FORECAST_YEAR))
 
 # ── Assemble HTML ─────────────────────────────────────────────
 _fc_topic_section_html = (
-    '<div class="section"><h2>&#128202; Total Forecast by Topic \u2014 2026</h2>'
+    '<div class="section"><h2>&#128202; Evergreen Forecast by Topic \u2014 2026</h2>'
     '<div class="inner">'
     f'<p class="chart-takeaway">{takeaway_topic}</p>'
     f'{fig_to_html(fig_fc_topic)}'
-    '<p class="chart-hint">&#8599; Hover over any bar to see example articles for that topic</p>'
+    '<p class="chart-hint">&#8599; Hover over any bar to see topic context</p>'
     '</div></div>'
 ) if fig_fc_topic is not None else ""
 
@@ -2238,8 +2330,8 @@ html = f"""<!DOCTYPE html>
 <div class="section"><h2>&#128202; Evergreen Forecast by Category \u2014 2026</h2><div class="inner"><p class="chart-takeaway">{takeaway_category}</p>{(fig_to_html(fig_cat) + cat_extra_html) if fig_cat is not None else '<p>No tier-1 evergreen category data available.</p>'}</div></div>
 {_fc_topic_section_html}
 <div class="section"><h2>&#128269; Main Topics</h2><div class="inner"><p style="margin:0 0 8px;color:#666;font-size:.88rem">Topic descriptions and top articles are shown below; click a card for full stats.</p>{topic_cards_html}</div></div>
-<div class="section"><h2>&#128193; 2026 Forecast per Topic</h2><div class="inner">{forecast_html}</div></div>
-<div class="section"><h2>&#9889; Evergreen vs Spontaneous Mix</h2><div class="inner"><p class="chart-takeaway">{takeaway_mix}</p>{spont_html}<p style="margin:10px 0 0;font-size:.78rem;color:#999">The adjusted 2025 reach mix is used to allocate the 2026 forecast. Absolute 2026 volume targets are shown in the KPIs above.</p></div></div>
+<div class="section"><h2>&#128193; 2026 Evergreen Forecast per Topic</h2><div class="inner">{forecast_html}</div></div>
+<div class="section"><h2>&#9889; Evergreen vs Spontaneous Mix</h2><div class="inner"><p class="chart-takeaway">{takeaway_mix}</p>{spont_html}<p style="margin:10px 0 0;font-size:.78rem;color:#999">The table shows the observed, unadjusted 2025 mix. The 2026 forecast uses the calibrated 71.0% evergreen / 29.0% spontaneous planning allocation shown in the KPIs above.</p></div></div>
 {topic_timing_html}
 
 <div id="topic-modal" class="modal-bg">
@@ -2270,7 +2362,7 @@ print(f"\n{'='*55}")
 print(f"  {EVENT_NAME.upper()} {FORECAST_YEAR} — FORECAST SUMMARY")
 print(f"{'='*55}")
 print(f"  Evergreen impressions : {total_ev_proj_M * 1e6:,.0f}")
-print(f"  Spontaneous budget    : ~{total_proj_M * spont_avg_pct / 100 * 1e6:,.0f}  ({spont_avg_pct:.1f}%)")
+print(f"  Spontaneous budget    : ~{_all_total_imps - _ev_total_imps:,.0f}  ({spont_avg_pct:.1f}%)")
 print(f"  Total projected       : ~{total_proj_M * 1e6:,.0f}")
 print(f"\n  Top 5 topics:")
 for _, r in proj.head(5).iterrows():
